@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BMI Calculator | HeightVault</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: "Poppins", sans-serif;
+      background: linear-gradient(135deg, #74ebd5, #acb6e5);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      overflow: hidden;
+      animation: bgShift 8s ease-in-out infinite alternate;
+    }
+
+    @keyframes bgShift {
+      from { background: linear-gradient(135deg, #74ebd5, #acb6e5); }
+      to { background: linear-gradient(135deg, #a8edea, #fed6e3); }
+    }
+
+    .container {
+      background: white;
+      padding: 40px;
+      border-radius: 20px;
+      box-shadow: 0 8px 25px rgba(0,0,0,0.3);
+      width: 380px;
+      text-align: center;
+      animation: fadeIn 1s ease;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(30px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    h1 {
+      color: #222;
+      margin-bottom: 15px;
+    }
+
+    .user-info {
+      font-size: 0.9em;
+      margin-bottom: 15px;
+      color: #555;
+    }
+
+    input {
+      width: 85%;
+      padding: 10px;
+      margin: 8px 0;
+      border-radius: 10px;
+      border: 1px solid #ccc;
+      font-size: 1em;
+    }
+
+    button {
+      width: 90%;
+      padding: 12px;
+      background: linear-gradient(90deg, #333, #555);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 1em;
+      margin-top: 10px;
+      transition: transform 0.2s, background 0.4s;
+    }
+
+    button:hover {
+      transform: scale(1.05);
+      background: linear-gradient(90deg, #000, #333);
+    }
+
+    .circle {
+      margin: 20px auto;
+      width: 150px;
+      height: 150px;
+      border-radius: 50%;
+      background: conic-gradient(#74ebd5 0deg, #acb6e5 0deg);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.6em;
+      font-weight: bold;
+      color: #333;
+      transition: background 1s ease, transform 0.6s ease;
+    }
+
+    p {
+      font-size: 1em;
+      color: #333;
+    }
+
+    #message {
+      margin-top: 10px;
+      font-size: 1em;
+    }
+
+    a {
+      display: inline-block;
+      margin-top: 10px;
+      color: #007BFF;
+      text-decoration: none;
+    }
+
+    a:hover { text-decoration: underline; }
+    
+
+  .profile-container {
+    position: fixed;
+    bottom: 80px;
+    right: 25px;
+    z-index: 1000;
+  }
+
+  .profile-btn {
+    background: #333;
+    color: #fff;
+    border: none;
+    border-radius: 50%;
+    width: 55px;
+    height: 55px;
+    font-size: 22px;
+    cursor: pointer;
+    box-shadow: 0 3px 8px rgba(0,0,0,0.3);
+  }
+
+  .profile-dropdown {
+    position: absolute;
+    bottom: 70px;
+    right: 0;
+    background: white;
+    border-radius: 10px;
+    box-shadow: 0 3px 10px rgba(0,0,0,0.2);
+    display: none;
+    width: 220px;
+    padding: 10px;
+  }
+
+  .profile-dropdown.show {
+    display: block;
+    animation: fadeIn 0.3s ease;
+  }
+
+  .profile-dropdown h4 {
+    margin: 5px 0;
+    color: #333;
+  }
+
+  .profile-dropdown a {
+    display: block;
+    padding: 6px;
+    color: #007BFF;
+    text-decoration: none;
+    font-size: 0.9em;
+  }
+
+  .profile-dropdown a:hover {
+    text-decoration: underline;
+  }
+
+  @keyframes fadeIn {
+    from {opacity: 0; transform: translateY(10px);}
+    to {opacity: 1; transform: translateY(0);}
+  }
+
+  /* Theme change after login */
+  body.logged-in {
+    background: linear-gradient(to right, #89f7fe, #66a6ff);
+    transition: background 1s ease;
+  }
+</style>
+  
+</head>
+<body>
+  <div class="container">
+    <h1>BMI Calculator</h1>
+    <div class="user-info" id="userInfo"></div>
+
+    <input type="number" id="height" placeholder="Height (cm)" required>
+    <input type="number" id="weight" placeholder="Weight (kg)" required>
+    <button onclick="calculateBMI()">Calculate</button>
+
+    <div class="circle" id="bmiCircle">--</div>
+    <p id="bmiText">Enter your height and weight above.</p>
+    <p id="message"></p>
+
+    <a href="dashboard.html">Go to Dashboard →</a>
+
+  </div><!-- Profile Dropdown -->
+<div class="profile-container" id="profileContainer" style="display:none;">
+  <button class="profile-btn" onclick="toggleProfile()">👤</button>
+  <div class="profile-dropdown" id="profileDropdown">
+    <h4 id="userNameDisplay"></h4>
+    <a href="bmi-history.html">📊 BMI History</a>
+    <a href="height-history.html">📏 Height Detection History</a>
+    <hr>
+    <a href="#" onclick="logout()">🚪 Logout</a>
+  </div>
+</div>
+
+
+<!-- Include global auth script -->
+<script src="auth.js"></script>
+
+  <script>
+    const scriptURL = "YOUR_SCRIPT_URL_HERE"; // <-- Replace with your Apps Script Web App URL
+
+    // Load user info from login (stored in localStorage)
+    const name = localStorage.getItem("userName");
+    const email = localStorage.getItem("userEmail");
+    const userInfo = document.getElementById("userInfo");
+
+    if (!name || !email) {
+      userInfo.innerHTML = "<b></b>";
+    } else {
+      userInfo.innerHTML = `👤 Logged in as <b>${name}</b> <br> ✉️ ${email}`;
+    }
+
+    async function calculateBMI() {
+      const height = parseFloat(document.getElementById('height').value);
+      const weight = parseFloat(document.getElementById('weight').value);
+      const circle = document.getElementById('bmiCircle');
+      const text = document.getElementById('bmiText');
+      const message = document.getElementById('message');
+
+      if (!height || !weight) {
+        text.textContent = "Please fill in both fields.";
+        text.style.color = "red";
+        return;
+      }
+
+      const bmi = (weight / ((height / 100) ** 2)).toFixed(1);
+      let color, status;
+      if (bmi < 18.5) { color = "#00BFFF"; status = "Underweight"; }
+      else if (bmi < 24.9) { color = "#00C851"; status = "Normal"; }
+      else if (bmi < 29.9) { color = "#FFBB33"; status = "Overweight"; }
+      else { color = "#FF4444"; status = "Obese"; }
+
+      const deg = Math.min(360, (bmi / 40) * 360);
+      circle.style.background = `conic-gradient(${color} ${deg}deg, #eee ${deg}deg)`;
+      circle.style.transform = "rotate(360deg)";
+      circle.textContent = bmi;
+      text.textContent = `Status: ${status}`;
+      text.style.color = color;
+
+      // Save to Google Sheet
+      if (!name || !email) {
+        message.style.color = "red";
+        
+        return;
+      }
+
+      const userData = { name, email, height, weight, bmi, status };
+
+      try {
+        const res = await fetch(scriptURL, {
+          method: "POST",
+          body: JSON.stringify(userData),
+        });
+        const result = await res.json();
+        if (result.result === "success") {
+          message.style.color = "green";
+          message.textContent = "✅ BMI saved successfully to your account!";
+        } else {
+          throw new Error("Save failed");
+        }
+      } catch (err) {
+        console.error(err);
+        message.style.color = "red";
+        message.textContent = "⚠️ Error saving to database.";
+      }
+    }
+  </script>
+</body>
+</html>

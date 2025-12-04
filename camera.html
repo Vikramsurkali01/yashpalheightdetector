@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0" />
+  <title>HeightVault — Height Detector (Upgraded)</title>
+  <style>
+    :root { --card: rgba(255,255,255,0.96); --accent:#0a78c8; }
+    html,body { height:100%; margin:0; font-family: system-ui, Arial; background:linear-gradient(135deg,#74ebd5,#acb6e5); }
+    .wrap { max-width:980px; margin:0 auto; padding:14px; display:flex; flex-direction:column; height:100%; }
+    header { display:flex; justify-content:space-between; align-items:center; padding:8px 0; }
+    header h1 { margin:0; font-size:1.05rem; color:#222; }
+    .stage { flex:1; display:flex; gap:12px; align-items:center; justify-content:center; flex-wrap:wrap; }
+    .camera-card, .controls { background:var(--card); border-radius:12px; padding:12px; box-shadow: 0 6px 20px rgba(0,0,0,0.12); }
+    .camera-card { flex:1 1 420px; min-width:300px; max-width:640px; position:relative; overflow:hidden; display:flex; align-items:center; justify-content:center; }
+    video#video { width:100%; height:100%; object-fit:cover; background:#000; }
+    canvas#overlay { position:absolute; left:0; top:0; width:100%; height:100%; pointer-events:auto; }
+    .controls { width:340px; min-height:260px; display:flex; flex-direction:column; gap:10px; }
+    label { font-size:0.9rem; color:#333; display:block; margin-bottom:6px; }
+    input[type="number"], select, button { width:100%; padding:10px; border-radius:8px; border:1px solid #ddd; font-size:1rem; box-sizing:border-box; }
+    .readout { font-weight:700; font-size:1.6rem; color:#111; text-align:center; padding:10px 6px; background:#fff3; border-radius:8px; }
+    .small { font-size:0.85rem; color:#444; }
+    .row { display:flex; gap:8px; }
+    .half { flex:1; }
+    .history-list { max-height:150px; overflow:auto; padding:6px; border-radius:8px; background:#fafafa; border:1px solid #eee; }
+    .history-item { padding:6px 8px; border-bottom:1px solid #eee; font-size:0.95rem; display:flex; justify-content:space-between; }
+    footer { text-align:center; padding:8px; color:#333; font-size:0.85rem; }
+    .btn-ghost { background:transparent; border:1px solid #ccc; padding:8px; border-radius:8px; cursor:pointer; }
+    .btn-primary { background:var(--accent); color:#fff; border: none; padding:10px; border-radius:8px; cursor:pointer; }
+    .status-ok { color: green; font-weight:600; }
+    .status-bad { color: #cc3300; font-weight:600; }
+    .note { font-size:0.82rem; color:#333; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>HeightVault — Height Detector (Upgraded)</h1>
+      <div>
+        <button id="switchCamBtn" class="btn-ghost">🔁 Switch Camera</button>
+      </div>
+    </header>
+
+    <div class="stage">
+      <div class="camera-card" id="cameraCard">
+        <video id="video" autoplay playsinline></video>
+        <canvas id="overlay"></canvas>
+      </div>
+
+      <div class="controls">
+        <div>
+          <label>Calibration method</label>
+          <select id="calibMode">
+            <option value="self">Enter known own height (recommended)</option>
+            <option value="object">Tap top & bottom of a known object (not yet interactive)</option>
+            <option value="none">No calibration — approximate</option>
+          </select>
+        </div>
+
+        <div id="calibInputs" class="small">
+          <label>Known height (cm)</label>
+          <div class="row">
+            <input id="knownHeight" type="number" placeholder="e.g. 170" />
+            <button id="calibBtn" class="btn-ghost">Calibrate</button>
+          </div>
+        </div>
+
+        <div>
+          <div class="readout" id="readout">— cm</div>
+          <div class="small" id="status">Initializing camera...</div>
+        </div>
+
+        <div class="row">
+          <button id="measureBtn" class="btn-primary" disabled>📏 Measure Now</button>
+          <button id="saveBtn" class="btn-ghost">💾 Save</button>
+        </div>
+
+        <div>
+          <label>History</label>
+          <div class="history-list" id="historyList"></div>
+        </div>
+      </div>
+    </div>
+
+    <footer>
+      Tip: stand straight, face the camera, make sure whole body is visible. Calibrate for best accuracy.
+    </footer>
+  </div>
+
+  <!-- Mediapipe -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5/pose.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3/camera_utils.js"></script>
+
+  <script>
+  /******************************
+   * Upgraded HeightVault Script
+   ******************************/
+
+  const video = document.getElementById('video');
+  const canvas = document.getElementById('overlay');
+  const ctx = canvas.getContext('2d');
+  const readout = document.getElementById('readout');
+  const status = document.getElementById('status');
+  const calibBtn = document.getElementById('calibBtn');
+  const knownHeightEl = document.getElementById('knownHeight');
+  const measureBtn = document.getElementById('measureBtn');
+  const saveBtn = document.getElementById('saveBtn');
+  const historyList = document.getElementById('historyList');
+  const switchCamBtn = document.getElementById('switchCamBtn');
+  const calibMode = document.getElementById('calibMode');
+
+  let camera = null;
+  let currentFacing = 'environment';
+  let smoothingFrames = 15;
+  let pixelHeights = []; // buffer for median smoothing
+  let lastStablePixelHeight = null;
+  let scaleCmPerPixel = parseFloat(localStorage.getItem('hv_scale')) || null;
+  let kneeToAnkleLearn = null; // learned pixel offset when ankles visible
+  const MEDIAN_WINDOW = 15;
+
+  // Mediapipe landmark indices (Pose)
+  const L = {
+    NOSE: 0, LEFT_EYE_INNER: 1, LEFT_EYE: 2, RIGHT_EYE_INNER: 4,
+    LEFT_SHOULDER: 11, RIGHT_SHOULDER: 12,
+    LEFT_HIP: 23, RIGHT_HIP: 24,
+    LEFT_KNEE: 25, RIGHT_KNEE: 26,
+    LEFT_ANKLE: 27, RIGHT_ANKLE: 28,
+    LEFT_HEEL: 29, RIGHT_HEEL: 30
+  };
+
+  function loadHistory(){
+    const hist = JSON.parse(localStorage.getItem('hv_history') || '[]');
+    if (!hist.length) {
+      historyList.innerHTML = '<div class="history-item">No records yet</div>';
+      return;
+    }
+    historyList.innerHTML = hist.map(h => `<div class="history-item"><div>${h.time}</div><div>${h.cm} cm | ${h.ftin}</div></div>`).join('');
+  }
+  loadHistory();
+
+  // Utility helpers
+  function median(arr){
+    const a = arr.slice().sort((x,y)=>x-y);
+    const n = a.length;
+    if (n===0) return null;
+    const mid = Math.floor(n/2);
+    return n % 2 === 1 ? a[mid] : (a[mid-1]+a[mid])/2;
+  }
+  function cmToFeetInches(cm){
+    const inches = cm / 2.54;
+    const ft = Math.floor(inches / 12);
+    const rem = Math.round(inches - ft*12);
+    return `${ft}ft ${rem}in`;
+  }
+  function clamp(v, a, b){ return Math.max(a, Math.min(b, v)); }
+
+  // Pose setup
+  const pose = new Pose({ locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5/${f}` });
+  pose.setOptions({ modelComplexity: 1, smoothLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+  pose.onResults(onPoseResults);
+
+  async function startCamera() {
+    if (camera) try { camera.stop(); } catch(e){}
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video:{ facingMode: currentFacing, width:{ideal:1280}, height:{ideal:720} }, audio:false
+      });
+      video.srcObject = stream;
+      await video.play();
+      video.style.transform = currentFacing === 'user' ? 'scaleX(-1)' : 'none';
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+
+      camera = new Camera(video, {
+        onFrame: async () => { await pose.send({image: video}); },
+        width: video.videoWidth,
+        height: video.videoHeight
+      });
+      camera.start();
+      status.textContent = 'Camera started — detecting...';
+    } catch(err) {
+      status.textContent = 'Camera error: ' + err;
+    }
+  }
+  startCamera();
+
+  // Core pose processing
+  function onPoseResults(results){
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+
+    if (!results.poseLandmarks) {
+      status.textContent = 'No person detected';
+      measureBtn.disabled = true;
+      return;
+    }
+
+    const lm = results.poseLandmarks; // array with x,y,z,visibility
+    // helper to check presence (visibility threshold)
+    function has(idx, minVis=0.35){ return lm[idx] && (lm[idx].visibility || 0) >= minVis; }
+    function yPx(idx){ return lm[idx].y * canvas.height; }
+    function xPx(idx){ return lm[idx].x * canvas.width; }
+
+    // ----- Estimate top-of-head (better than raw nose)
+    // Use nose and eyes to approximate top-of-head offset
+    const noseY = yPx(L.NOSE);
+    const eyeYs = [];
+    if (lm[L.LEFT_EYE]) eyeYs.push(yPx(L.LEFT_EYE));
+    if (lm[L.RIGHT_EYE]) eyeYs.push(yPx(L.RIGHT_EYE_INNER || L.RIGHT_EYE)); // fallback
+    let eyeAvg = eyeYs.length ? (eyeYs.reduce((a,b)=>a+b,0)/eyeYs.length) : noseY;
+    // vertical distance eye -> nose
+    const eyeToNose = Math.max(1, Math.abs(noseY - eyeAvg));
+    // empirically multiply to reach head-top
+    const headTop = noseY - eyeToNose * 1.25;
+
+    // ----- Estimate bottom-of-feet
+    // Prefer ankles, then heels, then estimate from knees + learned knee->ankle gap
+    let feetCandidates = [];
+    if (has(L.LEFT_ANKLE)) feetCandidates.push(yPx(L.LEFT_ANKLE));
+    if (has(L.RIGHT_ANKLE)) feetCandidates.push(yPx(L.RIGHT_ANKLE));
+    if (has(L.LEFT_HEEL)) feetCandidates.push(yPx(L.LEFT_HEEL));
+    if (has(L.RIGHT_HEEL)) feetCandidates.push(yPx(L.RIGHT_HEEL));
+
+    let feetY = null;
+    if (feetCandidates.length > 0) {
+      feetY = Math.max(...feetCandidates);
+      // if ankles present learn knee->ankle gap for future estimates
+      if (has(L.LEFT_ANKLE) && has(L.LEFT_KNEE)) {
+        const gap = yPx(L.LEFT_ANKLE) - yPx(L.LEFT_KNEE);
+        if (!kneeToAnkleLearn) kneeToAnkleLearn = gap;
+        else kneeToAnkleLearn = kneeToAnkleLearn * 0.9 + gap * 0.1;
+      } else if (has(L.RIGHT_ANKLE) && has(L.RIGHT_KNEE)){
+        const gap = yPx(L.RIGHT_ANKLE) - yPx(L.RIGHT_KNEE);
+        if (!kneeToAnkleLearn) kneeToAnkleLearn = gap;
+        else kneeToAnkleLearn = kneeToAnkleLearn * 0.9 + gap * 0.1;
+      }
+    } else {
+      // ankles not visible => use knees + learned offset if available
+      let kneeYs = [];
+      if (has(L.LEFT_KNEE)) kneeYs.push(yPx(L.LEFT_KNEE));
+      if (has(L.RIGHT_KNEE)) kneeYs.push(yPx(L.RIGHT_KNEE));
+      if (kneeYs.length && kneeToAnkleLearn) {
+        feetY = Math.max(...kneeYs) + kneeToAnkleLearn;
+      } else if (kneeYs.length) {
+        // fallback: use knee + average human knee->ankle pixel ratio assumption
+        const avgGapApprox = canvas.height * 0.12; // rough approx if unknown
+        feetY = Math.max(...kneeYs) + avgGapApprox;
+      }
+    }
+
+    if (!feetY || !headTop || !isFinite(feetY) || !isFinite(headTop)) {
+      status.textContent = 'Person not fully visible';
+      measureBtn.disabled = true;
+      return;
+    }
+
+    // ----- Raw pixel height from head-top to feet
+    let rawPixelHeight = feetY - headTop;
+    if (rawPixelHeight <= 20) {
+      status.textContent = 'Person too small in frame';
+      measureBtn.disabled = true;
+      return;
+    }
+
+    // ----- Tilt correction (reduce diagonal error)
+    // detect torso tilt by shoulders and hips
+    let tiltFactor = 1.0;
+    if (lm[L.LEFT_SHOULDER] && lm[L.RIGHT_SHOULDER] && lm[L.LEFT_HIP] && lm[L.RIGHT_HIP]) {
+      const leftShoulder = {x: xPx(L.LEFT_SHOULDER), y: yPx(L.LEFT_SHOULDER)};
+      const rightShoulder = {x: xPx(L.RIGHT_SHOULDER), y: yPx(L.RIGHT_SHOULDER)};
+      const shoulderMid = { x: (leftShoulder.x+rightShoulder.x)/2, y: (leftShoulder.y+rightShoulder.y)/2 };
+      const leftHip = {x: xPx(L.LEFT_HIP), y: yPx(L.LEFT_HIP)};
+      const rightHip = {x: xPx(L.RIGHT_HIP), y: yPx(L.RIGHT_HIP)};
+      const hipMid = { x: (leftHip.x+rightHip.x)/2, y: (leftHip.y+rightHip.y)/2 };
+      const dx = shoulderMid.x - hipMid.x;
+      const dy = shoulderMid.y - hipMid.y;
+      const tiltAngle = Math.atan2(Math.abs(dx), Math.abs(dy)); // small angle when vertical
+      // tiltFactor = cos(tiltAngle) approximately
+      tiltFactor = Math.cos(tiltAngle);
+      tiltFactor = clamp(tiltFactor, 0.6, 1.0); // prevent extreme corrections
+    }
+
+    const correctedPixelHeight = rawPixelHeight * tiltFactor;
+
+    // ----- Distance / perspective normalization using torso size
+    // torsoPixel ~ shoulder-mid to hip-mid distance
+    let torsoPixel = null;
+    if (lm[L.LEFT_SHOULDER] && lm[L.RIGHT_SHOULDER] && lm[L.LEFT_HIP] && lm[L.RIGHT_HIP]) {
+      const shouldersMidY = (yPx(L.LEFT_SHOULDER)+yPx(L.RIGHT_SHOULDER))/2;
+      const hipsMidY = (yPx(L.LEFT_HIP)+yPx(L.RIGHT_HIP))/2;
+      torsoPixel = Math.abs(hipsMidY - shouldersMidY);
+    }
+    // Use torsoPixel to slightly adjust scale to account for distance
+    // We will normalize correctedPixelHeight by torsoPixel relative to a nominal torsoPixel (empirical)
+    const NOMINAL_TORSO_PX = canvas.height * 0.30; // approximate nominal torso pixels when subject reasonably close
+    let distanceFactor = 1.0;
+    if (torsoPixel) {
+      distanceFactor = NOMINAL_TORSO_PX / torsoPixel;
+      // dampen effect to avoid overcorrection
+      distanceFactor = clamp(1 + (distanceFactor - 1) * 0.35, 0.8, 1.5);
+    }
+
+    const normalizedPixelHeight = correctedPixelHeight * distanceFactor;
+
+    // ----- Multi-frame median smoothing
+    pixelHeights.push(normalizedPixelHeight);
+    if (pixelHeights.length > MEDIAN_WINDOW) pixelHeights.shift();
+    const stablePixel = median(pixelHeights);
+    lastStablePixelHeight = stablePixel;
+
+    // Draw helpful overlay
+    ctx.lineWidth = Math.max(2, canvas.width * 0.003);
+    ctx.strokeStyle = 'rgba(10,120,200,0.95)';
+    ctx.setLineDash([]);
+    // head line
+    ctx.beginPath();
+    ctx.moveTo(8, Math.max(4, headTop));
+    ctx.lineTo(canvas.width-8, Math.max(4, headTop));
+    ctx.stroke();
+    // feet line
+    ctx.beginPath();
+    ctx.moveTo(8, Math.min(canvas.height-4, feetY));
+    ctx.lineTo(canvas.width-8, Math.min(canvas.height-4, feetY));
+    ctx.stroke();
+    // bounding box
+    ctx.strokeStyle = 'rgba(10,120,200,0.6)';
+    ctx.strokeRect(8, headTop, canvas.width-16, feetY - headTop);
+
+    // draw torso midline for tilt visualization
+    if (torsoPixel) {
+      const midX = (xPx(L.LEFT_SHOULDER) + xPx(L.RIGHT_SHOULDER) + xPx(L.LEFT_HIP) + xPx(L.RIGHT_HIP)) / 4;
+      ctx.beginPath();
+      ctx.moveTo(midX, (yPx(L.LEFT_SHOULDER)+yPx(L.RIGHT_SHOULDER))/2);
+      ctx.lineTo(midX, (yPx(L.LEFT_HIP)+yPx(L.RIGHT_HIP))/2);
+      ctx.strokeStyle = 'rgba(200,80,10,0.85)';
+      ctx.stroke();
+    }
+
+    // Enable measure when stable
+    measureBtn.disabled = false;
+    status.innerHTML = `<span class="status-ok">Person detected ✓</span> — stable frames: ${pixelHeights.length}/${MEDIAN_WINDOW}`;
+
+    // Update readout if calibrated
+    if (scaleCmPerPixel) {
+      const cm = lastStablePixelHeight * scaleCmPerPixel;
+      readout.textContent = cm.toFixed(1) + ' cm';
+    } else {
+      readout.textContent = (lastStablePixelHeight ? lastStablePixelHeight.toFixed(0) : '—') + ' px (uncalibrated)';
+    }
+  }
+
+  // Calibration button
+  calibBtn.addEventListener('click', () => {
+    const val = parseFloat(knownHeightEl.value);
+    if (!val || val <= 20) return alert('Enter a valid known height in cm (e.g. 170).');
+    if (!lastStablePixelHeight) return alert('Wait until person is detected and stable.');
+    scaleCmPerPixel = val / lastStablePixelHeight;
+    localStorage.setItem('hv_scale', scaleCmPerPixel.toString());
+    alert('Calibrated: scale saved to local storage.');
+  });
+
+  // Measure now (uses calibrated scale if present, otherwise uses average human head-to-height fallback)
+  measureBtn.addEventListener('click', () => {
+    if (!lastStablePixelHeight) return alert('No stable measurement yet.');
+    let cm;
+    if (scaleCmPerPixel) {
+      cm = lastStablePixelHeight * scaleCmPerPixel;
+    } else {
+      // fallback heuristic: estimate using head portion assumption
+      // head-to-body ratio: head is ~1/7.5 of height
+      // estimate head pixel from nose->eye offset used earlier: we don't store head length; we'll approximate:
+      const headPxGuess = Math.max(10, lastStablePixelHeight * 0.13); // roughly 13%
+      cm = headPxGuess * 7.5 * (lastStablePixelHeight / (headPxGuess * 7.5)) ; // identity; fallback -> use empirical cm/px ~ 0.35
+      // keep simple fallback: 0.35 cm/px is coarse, but better to show approximate
+      cm = lastStablePixelHeight * 0.35;
+    }
+    readout.textContent = cm.toFixed(1) + ' cm';
+    status.textContent = 'Measurement taken';
+  });
+
+  // Save measurement
+  saveBtn.addEventListener('click', () => {
+    if (!lastStablePixelHeight) return alert('No measurement to save.');
+    let cm = scaleCmPerPixel ? lastStablePixelHeight * scaleCmPerPixel : lastStablePixelHeight * 0.35;
+    const ftin = cmToFeetInches(cm);
+    const hist = JSON.parse(localStorage.getItem('hv_history') || '[]');
+    hist.unshift({ time:new Date().toLocaleString(), cm:cm.toFixed(1), ftin });
+    // keep last 50
+    localStorage.setItem('hv_history', JSON.stringify(hist.slice(0,50)));
+    loadHistory();
+    alert('Saved');
+  });
+
+  // Switch camera
+  switchCamBtn.addEventListener('click', async () => {
+    currentFacing = currentFacing === 'user' ? 'environment' : 'user';
+    if (video.srcObject) video.srcObject.getTracks().forEach(t => t.stop());
+    await startCamera();
+  });
+
+  // When user changes calib mode (future: show tap UI)
+  calibMode.addEventListener('change', () => {
+    if (calibMode.value === 'none') {
+      knownHeightEl.disabled = true;
+      calibBtn.disabled = true;
+      status.textContent = 'Using approximate mode (no calibration).';
+    } else {
+      knownHeightEl.disabled = false;
+      calibBtn.disabled = false;
+    }
+  });
+
+  // initial UI state
+  if (!scaleCmPerPixel) {
+    status.textContent = 'Not calibrated — enter known height for best accuracy.';
+    readout.textContent = '— cm';
+  } else {
+    readout.textContent = 'Using saved calibration';
+  }
+
+  </script>
+</body>
+</html>

@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HeightVault | Home</title>
+
+  <style>
+    body {
+      margin: 0;
+      font-family: "Poppins", sans-serif;
+      background: linear-gradient(135deg, #74ebd5, #acb6e5);
+      color: #333;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* NAVBAR */
+    nav {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 15px 25px;
+      background: linear-gradient(90deg, #1f1c2c, #928dab);
+      backdrop-filter: blur(10px);
+      border-bottom-left-radius: 18px;
+      border-bottom-right-radius: 18px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+      color: white;
+      position: sticky;
+      top: 0;
+      z-index: 999;
+    }
+
+    nav .logo {
+      font-size: 1.6em;
+      font-weight: 700;
+    }
+
+    nav ul {
+      list-style: none;
+      display: flex;
+      gap: 25px;
+      margin: 0;
+      padding: 0;
+    }
+
+    nav ul li a {
+      color: #fff;
+      text-decoration: none;
+      font-size: 1em;
+      font-weight: 500;
+      padding: 6px 10px;
+      position: relative;
+      transition: 0.3s;
+    }
+
+    nav ul li a:hover {
+      color: #74ebd5;
+    }
+
+    nav ul li a::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      bottom: -3px;
+      height: 2px;
+      width: 0%;
+      background-color: #74ebd5;
+      transition: 0.3s ease;
+    }
+
+    nav ul li a:hover::after {
+      width: 100%;
+    }
+
+    .hamburger {
+      font-size: 28px;
+      cursor: pointer;
+      display: none;
+      color: white;
+    }
+
+    /* MAIN SECTION (CARDS LIKE YOUR SCREENSHOT) */
+    .main {
+      flex: 1;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 35px;
+      padding: 40px 20px;
+      flex-wrap: wrap;
+    }
+
+    .card {
+      background: #ffffff;
+      border-radius: 28px;
+      padding: 35px 30px;
+      width: 380px;
+      max-width: 95%;
+      text-align: center;
+      box-shadow: 0 10px 35px rgba(0, 0, 0, 0.15);
+      transition: 0.35s ease;
+    }
+
+    .card:hover {
+      transform: translateY(-8px);
+      box-shadow: 0 18px 40px rgba(0, 0, 0, 0.20);
+    }
+
+    .card h1 {
+      font-size: 1.8em;
+      margin-bottom: 10px;
+      font-weight: 700;
+      color: #222;
+    }
+
+    .card p {
+      font-size: 1em;
+      color: #666;
+      margin-bottom: 25px;
+      line-height: 1.5;
+    }
+
+    .card button {
+      background: #444;
+      color: white;
+      padding: 14px 20px;
+      border: none;
+      border-radius: 12px;
+      font-size: 1em;
+      cursor: pointer;
+      width: 100%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 8px;
+      transition: 0.3s;
+    }
+
+    .card button:hover {
+      background: #222;
+    }
+
+    /* FOOTER */
+    footer {
+      background: #222;
+      color: #ccc;
+      text-align: center;
+      padding: 12px 0;
+      font-size: 0.9em;
+    }
+
+    /* PROFILE FLOAT BUTTON */
+    .profile-container {
+      position: fixed;
+      bottom: 90px;
+      right: 20px;
+      z-index: 1000;
+    }
+
+    .profile-btn {
+      background: #333;
+      color: white;
+      border-radius: 50%;
+      width: 55px;
+      height: 55px;
+      font-size: 22px;
+      cursor: pointer;
+      border: none;
+    }
+
+    .profile-dropdown {
+      position: absolute;
+      bottom: 70px;
+      right: 0;
+      background: white;
+      width: 200px;
+      border-radius: 10px;
+      box-shadow: 0 3px 10px rgba(0,0,0,0.2);
+      padding: 10px;
+      display: none;
+    }
+
+    .profile-dropdown.show {
+      display: block;
+    }
+
+    @media (max-width: 768px) {
+      nav ul {
+        position: absolute;
+        top: 70px;
+        right: 0;
+        background: #1f1c2c;
+        width: 200px;
+        flex-direction: column;
+        padding: 20px;
+        border-radius: 0 0 0 20px;
+        display: none;
+      }
+
+      nav ul.active {
+        display: flex;
+      }
+
+      .hamburger {
+        display: block;
+      }
+    }
+
+    body.logged-in {
+      background: linear-gradient(to right, #89f7fe, #66a6ff);
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- NAVBAR -->
+  <nav>
+    <div class="logo">HeightVault</div>
+
+    <ul id="navLinks">
+      <li><a href="index.html">Home</a></li>
+      <li><a href="camera.html">Track Height</a></li>
+      <li><a href="bmi.html">BMI Calculator</a></li>
+      <li><a href="auth.html">Login / Sign Up</a></li>
+    </ul>
+
+    <div class="hamburger" onclick="toggleMenu()">☰</div>
+  </nav>
+
+  <!-- MAIN CARDS -->
+  <div class="main">
+    <div class="card">
+      <h1>Height Detector</h1>
+      <p>Measure your height accurately using your camera in real time.</p>
+      <button onclick="location.href='camera.html'">📷 Open Height Tracker</button>
+    </div>
+
+    <div class="card">
+      <h1>BMI Calculator</h1>
+      <p>Check your Body Mass Index visually with animated feedback.</p>
+      <button onclick="location.href='bmi.html'">⚖️ Open BMI Calculator</button>
+    </div>
+  </div>
+
+  <!-- PROFILE FLOAT BUTTON -->
+  <div class="profile-container" id="profileContainer" style="display:none;">
+    <button class="profile-btn" onclick="toggleProfile()">👤</button>
+
+    <div class="profile-dropdown" id="profileDropdown">
+      <h4 id="userNameDisplay"></h4>
+      <a href="bmi-history.html">📊 BMI History</a>
+      <a href="height-history.html">📏 Height History</a>
+      <hr>
+      <a href="#" onclick="logout()">🚪 Logout</a>
+    </div>
+  </div>
+
+  <footer>
+    © 2025 HeightVault | Track your growth smartly.
+  </footer>
+
+  <script src="auth.js"></script>
+
+  <script>
+    function toggleMenu() {
+      document.getElementById("navLinks").classList.toggle("active");
+    }
+
+    function toggleProfile() {
+      document.getElementById("profileDropdown").classList.toggle("show");
+    }
+
+    function updateLoginState() {
+      const user = localStorage.getItem('userEmail');
+      const profile = document.getElementById('profileContainer');
+      const userNameDisplay = document.getElementById('userNameDisplay');
+
+      if (user) {
+        profile.style.display = "block";
+        userNameDisplay.textContent = "👤 " + user;
+        document.body.classList.add("logged-in");
+      } else {
+        profile.style.display = "none";
+        document.body.classList.remove("logged-in");
+      }
+    }
+
+    function logout() {
+      localStorage.removeItem('userEmail');
+      updateLoginState();
+    }
+
+    window.addEventListener("DOMContentLoaded", updateLoginState);
+  </script>
+
+</body>
+</html>
